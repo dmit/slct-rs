@@ -1,0 +1,8 @@
+[package]
+
+name = "slct-rs"
+version = "0.0.1"
+authors = ["Dmitri Melnikov <github@dmit.me>"]
+
+[dependencies]
+getopts = "*"
