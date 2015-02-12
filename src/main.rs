@@ -77,7 +77,6 @@ fn calc_word_freq(paths: &Vec<Path>, max_line_length: usize) -> Words {
         let file = File::open(path);
         let mut reader = BufferedReader::new(file);
 
-        let mut i = 0;
         for l in reader.lines() {
             let line = l.ok().unwrap();
             if max_line_length > 0 && line.len() > max_line_length {
