@@ -1,8 +1,8 @@
 #![crate_type = "bin"]
 
 #![feature(collections)]
-#![feature(core)]
 #![feature(env)]
+#![feature(fs)]
 #![feature(io)]
 #![feature(os)]
 #![feature(path)]
@@ -12,7 +12,8 @@ extern crate getopts;
 use std::collections::HashMap;
 use std::collections::hash_map::Entry::{Occupied,Vacant};
 use std::env;
-use std::old_io::{BufferedReader, File};
+use std::fs::File;
+use std::io::{BufReader,BufReadExt};
 use std::rt::heap;
 
 use getopts::Options;
@@ -75,7 +76,7 @@ fn calc_word_freq(paths: &Vec<Path>, max_line_length: usize) -> Words {
 
     for path in paths.iter() {
         let file = File::open(path);
-        let mut reader = BufferedReader::new(file);
+        let reader = BufReader::new(file.unwrap());
 
         for l in reader.lines() {
             let line = l.ok().unwrap();
@@ -100,8 +101,10 @@ fn calc_clusters(paths: &Vec<Path>, word_freq: &Words, word_threshold: Count, ma
     let mut clusters: HashMap<String, Count> = HashMap::new();
 
     for path in paths.iter() {
-        let mut file = BufferedReader::new(File::open(path));
-        for l in file.lines() {
+        let file = File::open(path);
+        let reader = BufReader::new(file.unwrap());
+
+        for l in reader.lines() {
             let line = l.ok().unwrap();
             if max_line_length > 0 && line.len() > max_line_length {
                 continue;
