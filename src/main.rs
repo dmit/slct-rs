@@ -1,11 +1,10 @@
 #![crate_type = "bin"]
 
-#![feature(collections)]
 #![feature(env)]
 #![feature(fs)]
 #![feature(io)]
-#![feature(os)]
 #![feature(path)]
+#![feature(std_misc)]
 
 extern crate getopts;
 
@@ -31,8 +30,7 @@ fn main() {
     opts.optopt("w", "word-threshold", "minimum frequency of a word to be considered for a cluster", "WORDTHRESHOLD");
     opts.optopt("", "max-line-length", "discard lines longer than this many characters", "MAX_LINE_LENGTH");
 
-    let args: Vec<String> = env::args().map(|s| s.into_string().unwrap()).collect();
-    let matches = opts.parse(args.tail()).unwrap_or_else(|f| panic!(f.to_string()));
+    let matches = opts.parse(env::args().skip(1)).unwrap_or_else(|f| panic!(f.to_string()));
 
     let cluster_threshold: Count = match matches.opt_str("c") {
         Some(ct) => { ct.parse().unwrap() }
