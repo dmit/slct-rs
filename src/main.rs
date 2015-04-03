@@ -1,10 +1,6 @@
 #![crate_type = "bin"]
 
-#![feature(env)]
-#![feature(fs)]
-#![feature(io)]
-#![feature(path)]
-#![feature(std_misc)]
+#![feature(str_words)]
 
 extern crate getopts;
 
@@ -12,8 +8,8 @@ use std::collections::HashMap;
 use std::collections::hash_map::Entry::{Occupied,Vacant};
 use std::env;
 use std::fs::File;
-use std::io::{BufReader,BufReadExt};
-use std::rt::heap;
+use std::io::{BufRead,BufReader};
+use std::path::Path;
 
 use getopts::Options;
 
@@ -25,7 +21,6 @@ type Clusters = HashMap<String, Count>;
 fn main() {
     let mut opts = Options::new();
     opts.optopt("c", "cluster-threshold", "cluster appearance threshold for diplay", "CLUSTERTHRESHOLD");
-    opts.optflag("m", "mem-stats", "print memory allocator statistics at the end");
     opts.optflag("r", "rare", "display only clusters below CLUSTERTHRESHOLD");
     opts.optopt("w", "word-threshold", "minimum frequency of a word to be considered for a cluster", "WORDTHRESHOLD");
     opts.optopt("", "max-line-length", "discard lines longer than this many characters", "MAX_LINE_LENGTH");
@@ -48,19 +43,14 @@ fn main() {
     };
 
     let show_rare = matches.opt_present("r");
-    let print_mem_stats = matches.opt_present("m");
 
-    let inputs: Vec<Path> = matches.free.iter().map(|f| Path::new(f)).collect();
+    let inputs: Vec<&Path> = matches.free.iter().map(|f| Path::new(f)).collect();
 
     let word_freq = calc_word_freq(&inputs, max_line_length);
     println!("found {} unique words", word_freq.len());
 
     let clusters = calc_clusters(&inputs, &word_freq, word_threshold, max_line_length);
     println!("found {} clusters", clusters.len());
-
-    if print_mem_stats {
-        heap::stats_print();
-    }
 
     for (k,v) in clusters.iter() {
         if show_rare == (*v < cluster_threshold) {
@@ -69,7 +59,7 @@ fn main() {
     }
 }
 
-fn calc_word_freq(paths: &Vec<Path>, max_line_length: usize) -> Words {
+fn calc_word_freq(paths: &Vec<&Path>, max_line_length: usize) -> Words {
     let mut word_freq: HashMap<Hash, Count> = HashMap::new();
 
     for path in paths.iter() {
@@ -95,7 +85,7 @@ fn calc_word_freq(paths: &Vec<Path>, max_line_length: usize) -> Words {
     word_freq
 }
 
-fn calc_clusters(paths: &Vec<Path>, word_freq: &Words, word_threshold: Count, max_line_length: usize) -> Clusters {
+fn calc_clusters(paths: &Vec<&Path>, word_freq: &Words, word_threshold: Count, max_line_length: usize) -> Clusters {
     let mut clusters: HashMap<String, Count> = HashMap::new();
 
     for path in paths.iter() {
@@ -123,7 +113,7 @@ fn calc_clusters(paths: &Vec<Path>, word_freq: &Words, word_threshold: Count, ma
 
 fn clusterify(line: String, word_freq: &Words, word_threshold: Count) -> String {
     let words: Vec<&str> = line.words().map({ |w|
-        if word_freq[fnv1a(w)] < word_threshold {
+        if word_freq[&fnv1a(w)] < word_threshold {
             "*"
         } else {
             w
@@ -133,8 +123,8 @@ fn clusterify(line: String, word_freq: &Words, word_threshold: Count) -> String 
     words.connect(" ")
 }
 
-static FNV_PRIME_64: Hash = 1099511628211;
-static FNV1_OFFSET_BASIS_64: Hash = 14695981039346656037;
+const FNV_PRIME_64: Hash = 1099511628211;
+const FNV1_OFFSET_BASIS_64: Hash = 14695981039346656037;
 
 fn fnv1a(s: &str) -> Hash {
     let mut hash = FNV1_OFFSET_BASIS_64;
