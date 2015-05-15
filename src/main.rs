@@ -1,7 +1,5 @@
 #![crate_type = "bin"]
 
-#![feature(str_words)]
-
 extern crate getopts;
 
 use std::collections::HashMap;
@@ -72,7 +70,7 @@ fn calc_word_freq(paths: &Vec<&Path>, max_line_length: usize) -> Words {
                 continue;
             }
 
-            for w in line.words() {
+            for w in line.split(char::is_whitespace).filter(|s| !s.is_empty()) {
                 let hash = fnv1a(w);
                 match word_freq.entry(hash) {
                     Vacant(wf) => { wf.insert(1); },
@@ -112,7 +110,7 @@ fn calc_clusters(paths: &Vec<&Path>, word_freq: &Words, word_threshold: Count, m
 }
 
 fn clusterify(line: String, word_freq: &Words, word_threshold: Count) -> String {
-    let words: Vec<&str> = line.words().map({ |w|
+    let words: Vec<&str> = line.split(char::is_whitespace).filter(|s| !s.is_empty()).map({ |w|
         if word_freq[&fnv1a(w)] < word_threshold {
             "*"
         } else {
