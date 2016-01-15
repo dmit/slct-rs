@@ -118,7 +118,7 @@ fn clusterify(line: String, word_freq: &Words, word_threshold: Count) -> String 
         }
     }).collect();
 
-    words.connect(" ")
+    words.join(" ")
 }
 
 const FNV_PRIME_64: Hash = 1099511628211;
