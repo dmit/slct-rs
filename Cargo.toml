@@ -5,4 +5,4 @@ version = "0.0.1"
 authors = ["Dmitri Melnikov <github@dmit.me>"]
 
 [dependencies]
-getopts = "*"
+getopts = "0.2.*"
