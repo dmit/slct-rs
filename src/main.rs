@@ -1,5 +1,3 @@
-#![crate_type = "bin"]
-
 extern crate getopts;
 
 use std::collections::HashMap;
@@ -22,12 +20,13 @@ fn main() {
     opts.optopt("c",
                 "cluster-threshold",
                 "cluster appearance threshold for diplay (1000)",
-                "CLUSTERTHRESHOLD");
-    opts.optflag("r", "rare", "display only clusters below CLUSTERTHRESHOLD");
+                "CLUSTER_THRESHOLD");
+    opts.optflag("h", "help", "print this help message");
+    opts.optflag("r", "rare", "display only clusters below CLUSTER_THRESHOLD");
     opts.optopt("w",
                 "word-threshold",
                 "minimum frequency of a word to be considered for a cluster (1000)",
-                "WORDTHRESHOLD");
+                "WORD_THRESHOLD");
     opts.optopt("",
                 "max-line-length",
                 "discard lines longer than this many characters (1000)",
@@ -36,26 +35,32 @@ fn main() {
     let matches = opts.parse(env::args().skip(1)).expect("Parsing args");
 
     let cluster_threshold: Count = match matches.opt_str("c") {
-        Some(ct) => ct.parse().expect("cluster-threshold"),
+        Some(ct) => ct.parse().expect("Invalid cluster-threshold"),
         None => 1000,
     };
 
     let word_threshold: Count = match matches.opt_str("w") {
-        Some(wt) => wt.parse().expect("word-threshold"),
+        Some(wt) => wt.parse().expect("Invalid word-threshold"),
         None => 1000,
     };
 
     let max_line_length: usize = match matches.opt_str("max-line-length") {
-        Some(len) => len.parse().expect("max-line-length"),
+        Some(len) => len.parse().expect("Invalid max-line-length"),
         None => 1000,
     };
 
+    let print_help = matches.opt_present("h");
     let show_rare = matches.opt_present("r");
 
     let inputs: Vec<&Path> = matches.free
                                     .iter()
                                     .map(|p| Path::new(p))
                                     .collect();
+
+    if print_help || inputs.is_empty() {
+        println!("{}", opts.usage("Usage: slct-rs [options] [<files>...]"));
+        return;
+    }
 
     let word_freq = calc_word_freq(&inputs, max_line_length);
     println!("found {} unique words", word_freq.len());
