@@ -5,6 +5,8 @@ http://creativecommons.org/publicdomain/zero/1.0/
 slct-rs
 =======
 
+[![Build Status](https://travis-ci.org/dmit/slct-rs.svg?branch=master)](https://travis-ci.org/dmit/slct-rs)
+
 SLCT (simple logfile clustering tool) in Rust. Based on ideas
 by [Risto Vaarandi](https://github.com/ristov).
 
