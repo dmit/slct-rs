@@ -1,19 +1,24 @@
+extern crate fnv;
 extern crate getopts;
 
 use std::collections::HashMap;
 use std::collections::hash_map::Entry::{Occupied, Vacant};
 use std::env;
 use std::fs::File;
+use std::hash::{BuildHasherDefault, Hasher};
+use std::io;
 use std::io::{BufRead, BufReader};
 use std::iter::Iterator;
 use std::path::Path;
 
+use fnv::FnvHasher;
 use getopts::Options;
 
 type Hash = u64;
 type Count = u32;
-type Words = HashMap<Hash, Count>;
-type Clusters = HashMap<String, Count>;
+type Fnv = BuildHasherDefault<FnvHasher>;
+type Words = HashMap<Hash, Count, Fnv>;
+type Clusters = HashMap<String, Count, Fnv>;
 
 fn main() {
     let mut opts = Options::new();
@@ -22,6 +27,9 @@ fn main() {
                 "cluster appearance threshold for diplay (1000)",
                 "CLUSTER_THRESHOLD");
     opts.optflag("h", "help", "print this help message");
+    opts.optflag("m",
+                 "merge-lines",
+                 "consider lines with leading whitespace part of the previous message");
     opts.optflag("r", "rare", "display only clusters below CLUSTER_THRESHOLD");
     opts.optopt("w",
                 "word-threshold",
@@ -50,6 +58,7 @@ fn main() {
     };
 
     let print_help = matches.opt_present("h");
+    let merge_lines = matches.opt_present("m");
     let show_rare = matches.opt_present("r");
 
     let inputs: Vec<&Path> = matches.free
@@ -62,10 +71,16 @@ fn main() {
         return;
     }
 
-    let word_freq = calc_word_freq(&inputs, max_line_length);
+    let word_freq = calc_word_freq(&inputs, max_line_length)
+                        .expect("Failed to calculate word frequency");
     println!("found {} unique words", word_freq.len());
 
-    let clusters = calc_clusters(&inputs, &word_freq, word_threshold, max_line_length);
+    let clusters = calc_clusters(&inputs,
+                                 &word_freq,
+                                 word_threshold,
+                                 max_line_length,
+                                 merge_lines)
+                       .expect("Failed to calculate clusters");
     println!("found {} clusters", clusters.len());
 
     for (k, v) in clusters.iter() {
@@ -75,16 +90,15 @@ fn main() {
     }
 }
 
-fn calc_word_freq(paths: &Vec<&Path>, max_line_length: usize) -> Words {
-    let mut word_freq: HashMap<Hash, Count> = HashMap::new();
+fn calc_word_freq(paths: &Vec<&Path>, max_line_length: usize) -> io::Result<Words> {
+    let mut word_freq: Words = HashMap::default();
 
     for path in paths {
-        let file = File::open(path);
-        let reader = BufReader::new(file.expect(&format!("Opening file {}",
-                                                         path.to_string_lossy())));
+        let file = try!(File::open(path));
+        let reader = BufReader::new(file);
 
         for l in reader.lines() {
-            let line = l.ok().expect("Reading input");
+            let line = try!(l);
             if max_line_length > 0 && line.len() > max_line_length {
                 continue;
             }
@@ -103,28 +117,40 @@ fn calc_word_freq(paths: &Vec<&Path>, max_line_length: usize) -> Words {
         }
     }
 
-    word_freq
+    Result::Ok(word_freq)
 }
 
 fn calc_clusters(paths: &Vec<&Path>,
                  word_freq: &Words,
                  word_threshold: Count,
-                 max_line_length: usize)
-                 -> Clusters {
-    let mut clusters: HashMap<String, Count> = HashMap::new();
+                 max_line_length: usize,
+                 merge_lines: bool)
+                 -> io::Result<Clusters> {
+    let mut clusters: Clusters = HashMap::default();
 
     for path in paths {
-        let file = File::open(path);
-        let reader = BufReader::new(file.expect(&format!("Opening file {}",
-                                                         path.to_string_lossy())));
+        let file = try!(File::open(path));
+        let reader = BufReader::new(file);
 
+        let mut chunk = String::new();
         for l in reader.lines() {
-            let line = l.ok().expect("Reading input");
-            if max_line_length > 0 && line.len() > max_line_length {
+            let line = try!(l);
+            let whitespace = match line.chars().next() {
+                Some(ch) => ch.is_whitespace(),
+                None => true,
+            };
+
+            if merge_lines && whitespace {
+                chunk.push_str(&line);
                 continue;
             }
 
-            let cluster = clusterify(line, word_freq, word_threshold);
+            if max_line_length > 0 && chunk.len() > max_line_length {
+                chunk.clear();
+                continue;
+            }
+
+            let cluster = clusterify(&chunk, word_freq, word_threshold);
             if !cluster.is_empty() {
                 match clusters.entry(cluster) {
                     Vacant(c) => {
@@ -135,13 +161,28 @@ fn calc_clusters(paths: &Vec<&Path>,
                     }
                 };
             }
+
+            chunk.clear();
+            chunk.push_str(&line);
+        }
+
+        let cluster = clusterify(&chunk, word_freq, word_threshold);
+        if !cluster.is_empty() {
+            match clusters.entry(cluster) {
+                Vacant(c) => {
+                    c.insert(1);
+                }
+                Occupied(mut c) => {
+                    *c.get_mut() += 1;
+                }
+            };
         }
     }
 
-    clusters
+    Result::Ok(clusters)
 }
 
-fn clusterify(line: String, word_freq: &Words, word_threshold: Count) -> String {
+fn clusterify(line: &str, word_freq: &Words, word_threshold: Count) -> String {
     let words: Vec<&str> = line.split(char::is_whitespace)
                                .filter(|s| !s.is_empty())
                                .map({
@@ -158,14 +199,9 @@ fn clusterify(line: String, word_freq: &Words, word_threshold: Count) -> String 
     words.join(" ")
 }
 
-const FNV_PRIME_64: Hash = 1099511628211;
-const FNV1_OFFSET_BASIS_64: Hash = 14695981039346656037;
-
 #[inline]
 fn fnv1a(s: &str) -> Hash {
-    let mut hash = FNV1_OFFSET_BASIS_64;
-    for b in s.as_bytes().iter() {
-        hash = (hash ^ *b as Hash) * FNV_PRIME_64;
-    }
-    hash
+    let mut hasher = FnvHasher::default();
+    hasher.write(s.as_bytes());
+    hasher.finish()
 }
