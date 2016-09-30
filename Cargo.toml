@@ -5,5 +5,5 @@ license = "CC0-1.0"
 authors = ["Dmitri Melnikov <github@dmit.me>"]
 
 [dependencies]
-fnv = "~1.0.2"
-getopts = "~0.2.14"
+fnv = "1.0"
+getopts = "0.2"

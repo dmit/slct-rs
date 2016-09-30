@@ -2,7 +2,6 @@ extern crate fnv;
 extern crate getopts;
 
 use std::collections::HashMap;
-use std::collections::hash_map::Entry::{Occupied, Vacant};
 use std::env;
 use std::fs::File;
 use std::hash::{BuildHasherDefault, Hasher};
@@ -17,8 +16,8 @@ use getopts::Options;
 type Hash = u64;
 type Count = u32;
 type Fnv = BuildHasherDefault<FnvHasher>;
-type Words = HashMap<Hash, Count, Fnv>;
-type Clusters = HashMap<String, Count, Fnv>;
+type WordCount = HashMap<Hash, Count, Fnv>;
+type Clusters = HashMap<Vec<u8>, Count, Fnv>;
 
 fn main() {
     let mut opts = Options::new();
@@ -62,9 +61,9 @@ fn main() {
     let show_rare = matches.opt_present("r");
 
     let inputs: Vec<&Path> = matches.free
-                                    .iter()
-                                    .map(|p| Path::new(p))
-                                    .collect();
+        .iter()
+        .map(|p| Path::new(p))
+        .collect();
 
     if print_help || inputs.is_empty() {
         println!("{}", opts.usage("Usage: slct-rs [options] [<files>...]"));
@@ -72,7 +71,7 @@ fn main() {
     }
 
     let word_freq = calc_word_freq(&inputs, max_line_length)
-                        .expect("Failed to calculate word frequency");
+        .expect("Failed to calculate word frequency");
     println!("found {} unique words", word_freq.len());
 
     let clusters = calc_clusters(&inputs,
@@ -80,18 +79,30 @@ fn main() {
                                  word_threshold,
                                  max_line_length,
                                  merge_lines)
-                       .expect("Failed to calculate clusters");
+        .expect("Failed to calculate clusters");
     println!("found {} clusters", clusters.len());
 
-    for (k, v) in clusters.iter() {
-        if show_rare == (*v < cluster_threshold) {
-            println!("{}\t{}", v, k);
-        }
+    let sorted = {
+        let mut v = clusters.into_iter()
+            .filter(|c| if show_rare {
+                c.1 <= cluster_threshold
+            } else {
+                c.1 >= cluster_threshold
+            })
+            .collect::<Vec<_>>();
+        v.sort_by(|a, b| b.1.cmp(&(a.1)));
+        v
+    };
+
+    for (cluster, count) in sorted {
+        println!("{}\t{}",
+                 count,
+                 String::from_utf8(cluster).expect("Invalid UTF-8"));
     }
 }
 
-fn calc_word_freq(paths: &Vec<&Path>, max_line_length: usize) -> io::Result<Words> {
-    let mut word_freq: Words = HashMap::default();
+fn calc_word_freq(paths: &[&Path], max_line_length: usize) -> io::Result<WordCount> {
+    let mut word_freq: WordCount = HashMap::default();
 
     for path in paths {
         let file = try!(File::open(path));
@@ -104,15 +115,8 @@ fn calc_word_freq(paths: &Vec<&Path>, max_line_length: usize) -> io::Result<Word
             }
 
             for w in line.split(char::is_whitespace).filter(|s| !s.is_empty()) {
-                let hash = fnv1a(w);
-                match word_freq.entry(hash) {
-                    Vacant(wf) => {
-                        wf.insert(1);
-                    }
-                    Occupied(mut wf) => {
-                        *wf.get_mut() += 1;
-                    }
-                };
+                let hash = fnv1a(w.as_bytes());
+                *word_freq.entry(hash).or_insert(0) += 1;
             }
         }
     }
@@ -120,8 +124,8 @@ fn calc_word_freq(paths: &Vec<&Path>, max_line_length: usize) -> io::Result<Word
     Result::Ok(word_freq)
 }
 
-fn calc_clusters(paths: &Vec<&Path>,
-                 word_freq: &Words,
+fn calc_clusters(paths: &[&Path],
+                 word_freq: &WordCount,
                  word_threshold: Count,
                  max_line_length: usize,
                  merge_lines: bool)
@@ -132,7 +136,7 @@ fn calc_clusters(paths: &Vec<&Path>,
         let file = try!(File::open(path));
         let reader = BufReader::new(file);
 
-        let mut chunk = String::new();
+        let mut chunk: Vec<u8> = Vec::new();
         for l in reader.lines() {
             let line = try!(l);
             let whitespace = match line.chars().next() {
@@ -141,7 +145,7 @@ fn calc_clusters(paths: &Vec<&Path>,
             };
 
             if merge_lines && whitespace {
-                chunk.push_str(&line);
+                chunk.extend_from_slice(line.as_bytes());
                 continue;
             }
 
@@ -152,56 +156,74 @@ fn calc_clusters(paths: &Vec<&Path>,
 
             let cluster = clusterify(&chunk, word_freq, word_threshold);
             if !cluster.is_empty() {
-                match clusters.entry(cluster) {
-                    Vacant(c) => {
-                        c.insert(1);
-                    }
-                    Occupied(mut c) => {
-                        *c.get_mut() += 1;
-                    }
-                };
+                *clusters.entry(cluster).or_insert(0) += 1;
             }
 
             chunk.clear();
-            chunk.push_str(&line);
+            chunk.extend_from_slice(line.as_bytes());
         }
 
         let cluster = clusterify(&chunk, word_freq, word_threshold);
         if !cluster.is_empty() {
-            match clusters.entry(cluster) {
-                Vacant(c) => {
-                    c.insert(1);
-                }
-                Occupied(mut c) => {
-                    *c.get_mut() += 1;
-                }
-            };
+            *clusters.entry(cluster).or_insert(0) += 1;
         }
     }
 
     Result::Ok(clusters)
 }
 
-fn clusterify(line: &str, word_freq: &Words, word_threshold: Count) -> String {
-    let words: Vec<&str> = line.split(char::is_whitespace)
-                               .filter(|s| !s.is_empty())
-                               .map({
-                                   |w| {
-                                       if word_freq[&fnv1a(w)] < word_threshold {
-                                           "*"
-                                       } else {
-                                           w
-                                       }
-                                   }
-                               })
-                               .collect();
+fn clusterify(chunk: &[u8], word_freq: &WordCount, word_threshold: Count) -> Vec<u8> {
+    let mut result: Vec<u8> = Vec::new();
+    let mut marker = get_whitespace(chunk).len();
+    loop {
+        let word = get_word(&chunk[marker..]);
+        if word.is_empty() {
+            break;
+        }
+        marker += word.len();
 
-    words.join(" ")
+        if word_freq[&fnv1a(word)] < word_threshold {
+            result.push(b'*');
+        } else {
+            result.extend_from_slice(word);
+        }
+
+        let whitespace = get_whitespace(&chunk[marker..]);
+        result.extend_from_slice(whitespace);
+        marker += whitespace.len();
+    }
+
+    result
 }
 
 #[inline]
-fn fnv1a(s: &str) -> Hash {
+fn is_whitespace(b: u8) -> bool {
+    b == b' ' || b == b'\t' || b == b'\r' || b == b'\n'
+}
+
+#[inline]
+fn get_word(bytes: &[u8]) -> &[u8] {
+    for (i, b) in bytes.iter().enumerate() {
+        if is_whitespace(*b) {
+            return &bytes[..i];
+        }
+    }
+    bytes
+}
+
+#[inline]
+fn get_whitespace(bytes: &[u8]) -> &[u8] {
+    for (i, b) in bytes.iter().enumerate() {
+        if !is_whitespace(*b) {
+            return &bytes[..i];
+        }
+    }
+    bytes
+}
+
+#[inline]
+fn fnv1a(bytes: &[u8]) -> Hash {
     let mut hasher = FnvHasher::default();
-    hasher.write(s.as_bytes());
+    hasher.write(bytes);
     hasher.finish()
 }
