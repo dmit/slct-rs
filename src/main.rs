@@ -5,9 +5,7 @@ use std::collections::HashMap;
 use std::env;
 use std::fs::File;
 use std::hash::{BuildHasherDefault, Hasher};
-use std::io;
-use std::io::{BufRead, BufReader};
-use std::iter::Iterator;
+use std::io::{self, BufRead, BufReader};
 use std::path::Path;
 
 use fnv::FnvHasher;
@@ -21,23 +19,31 @@ type Clusters = HashMap<Vec<u8>, Count, Fnv>;
 
 fn main() {
     let mut opts = Options::new();
-    opts.optopt("c",
-                "cluster-threshold",
-                "cluster appearance threshold for diplay (1000)",
-                "CLUSTER_THRESHOLD");
+    opts.optopt(
+        "c",
+        "cluster-threshold",
+        "cluster appearance threshold for diplay (1000)",
+        "CLUSTER_THRESHOLD",
+    );
     opts.optflag("h", "help", "print this help message");
-    opts.optflag("m",
-                 "merge-lines",
-                 "consider lines with leading whitespace part of the previous message");
+    opts.optflag(
+        "m",
+        "merge-lines",
+        "consider lines with leading whitespace part of the previous message",
+    );
     opts.optflag("r", "rare", "display only clusters below CLUSTER_THRESHOLD");
-    opts.optopt("w",
-                "word-threshold",
-                "minimum frequency of a word to be considered for a cluster (1000)",
-                "WORD_THRESHOLD");
-    opts.optopt("",
-                "max-line-length",
-                "discard lines longer than this many characters (1000)",
-                "MAX_LINE_LENGTH");
+    opts.optopt(
+        "w",
+        "word-threshold",
+        "minimum frequency of a word to be considered for a cluster (1000)",
+        "WORD_THRESHOLD",
+    );
+    opts.optopt(
+        "",
+        "max-line-length",
+        "discard lines longer than this many characters (1000)",
+        "MAX_LINE_LENGTH",
+    );
 
     let matches = opts.parse(env::args().skip(1)).expect("Parsing args");
 
@@ -60,34 +66,36 @@ fn main() {
     let merge_lines = matches.opt_present("m");
     let show_rare = matches.opt_present("r");
 
-    let inputs: Vec<&Path> = matches.free
-        .iter()
-        .map(|p| Path::new(p))
-        .collect();
+    let inputs: Vec<&Path> = matches.free.iter().map(|p| Path::new(p)).collect();
 
     if print_help || inputs.is_empty() {
         println!("{}", opts.usage("Usage: slct-rs [options] [<files>...]"));
         return;
     }
 
-    let word_freq = calc_word_freq(&inputs, max_line_length)
-        .expect("Failed to calculate word frequency");
+    let word_freq =
+        calc_word_freq(&inputs, max_line_length).expect("Failed to calculate word frequency");
     println!("found {} unique words", word_freq.len());
 
-    let clusters = calc_clusters(&inputs,
-                                 &word_freq,
-                                 word_threshold,
-                                 max_line_length,
-                                 merge_lines)
-        .expect("Failed to calculate clusters");
+    let clusters = calc_clusters(
+        &inputs,
+        &word_freq,
+        word_threshold,
+        max_line_length,
+        merge_lines,
+    )
+    .expect("Failed to calculate clusters");
     println!("found {} clusters", clusters.len());
 
     let sorted = {
-        let mut v = clusters.into_iter()
-            .filter(|c| if show_rare {
-                c.1 <= cluster_threshold
-            } else {
-                c.1 >= cluster_threshold
+        let mut v = clusters
+            .into_iter()
+            .filter(|c| {
+                if show_rare {
+                    c.1 <= cluster_threshold
+                } else {
+                    c.1 >= cluster_threshold
+                }
             })
             .collect::<Vec<_>>();
         v.sort_by(|a, b| b.1.cmp(&(a.1)));
@@ -95,9 +103,11 @@ fn main() {
     };
 
     for (cluster, count) in sorted {
-        println!("{}\t{}",
-                 count,
-                 String::from_utf8(cluster).expect("Invalid UTF-8"));
+        println!(
+            "{}\t{}",
+            count,
+            String::from_utf8(cluster).expect("Invalid UTF-8")
+        );
     }
 }
 
@@ -105,11 +115,11 @@ fn calc_word_freq(paths: &[&Path], max_line_length: usize) -> io::Result<WordCou
     let mut word_freq: WordCount = HashMap::default();
 
     for path in paths {
-        let file = try!(File::open(path));
+        let file = File::open(path)?;
         let reader = BufReader::new(file);
 
-        for l in reader.lines() {
-            let line = try!(l);
+        for line in reader.lines() {
+            let line = line?;
             if max_line_length > 0 && line.len() > max_line_length {
                 continue;
             }
@@ -124,21 +134,22 @@ fn calc_word_freq(paths: &[&Path], max_line_length: usize) -> io::Result<WordCou
     Result::Ok(word_freq)
 }
 
-fn calc_clusters(paths: &[&Path],
-                 word_freq: &WordCount,
-                 word_threshold: Count,
-                 max_line_length: usize,
-                 merge_lines: bool)
-                 -> io::Result<Clusters> {
+fn calc_clusters(
+    paths: &[&Path],
+    word_freq: &WordCount,
+    word_threshold: Count,
+    max_line_length: usize,
+    merge_lines: bool,
+) -> io::Result<Clusters> {
     let mut clusters: Clusters = HashMap::default();
 
     for path in paths {
-        let file = try!(File::open(path));
+        let file = File::open(path)?;
         let reader = BufReader::new(file);
 
         let mut chunk: Vec<u8> = Vec::new();
-        for l in reader.lines() {
-            let line = try!(l);
+        for line in reader.lines() {
+            let line = line?;
             let whitespace = match line.chars().next() {
                 Some(ch) => ch.is_whitespace(),
                 None => true,
@@ -197,14 +208,9 @@ fn clusterify(chunk: &[u8], word_freq: &WordCount, word_threshold: Count) -> Vec
 }
 
 #[inline]
-fn is_whitespace(b: u8) -> bool {
-    b == b' ' || b == b'\t' || b == b'\r' || b == b'\n'
-}
-
-#[inline]
 fn get_word(bytes: &[u8]) -> &[u8] {
     for (i, b) in bytes.iter().enumerate() {
-        if is_whitespace(*b) {
+        if b.is_ascii_whitespace() {
             return &bytes[..i];
         }
     }
@@ -214,7 +220,7 @@ fn get_word(bytes: &[u8]) -> &[u8] {
 #[inline]
 fn get_whitespace(bytes: &[u8]) -> &[u8] {
     for (i, b) in bytes.iter().enumerate() {
-        if !is_whitespace(*b) {
+        if !b.is_ascii_whitespace() {
             return &bytes[..i];
         }
     }
