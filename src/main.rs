@@ -1,100 +1,71 @@
-extern crate fnv;
-extern crate getopts;
-
 use std::collections::HashMap;
-use std::env;
+use std::error::Error;
 use std::fs::File;
 use std::hash::{BuildHasherDefault, Hasher};
 use std::io::{self, BufRead, BufReader};
-use std::path::Path;
+use std::path::PathBuf;
 
 use fnv::FnvHasher;
-use getopts::Options;
+use structopt::StructOpt;
 
 type Hash = u64;
-type Count = u32;
+type Count = u64;
 type Fnv = BuildHasherDefault<FnvHasher>;
 type WordCount = HashMap<Hash, Count, Fnv>;
 type Clusters = HashMap<Vec<u8>, Count, Fnv>;
 
-fn main() {
-    let mut opts = Options::new();
-    opts.optopt(
-        "c",
-        "cluster-threshold",
-        "cluster appearance threshold for diplay (1000)",
-        "CLUSTER_THRESHOLD",
-    );
-    opts.optflag("h", "help", "print this help message");
-    opts.optflag(
-        "m",
-        "merge-lines",
-        "consider lines with leading whitespace part of the previous message",
-    );
-    opts.optflag("r", "rare", "display only clusters below CLUSTER_THRESHOLD");
-    opts.optopt(
-        "w",
-        "word-threshold",
-        "minimum frequency of a word to be considered for a cluster (1000)",
-        "WORD_THRESHOLD",
-    );
-    opts.optopt(
-        "",
-        "max-line-length",
-        "discard lines longer than this many characters (1000)",
-        "MAX_LINE_LENGTH",
-    );
+#[derive(StructOpt)]
+#[structopt(author = "")]
+struct Opts {
+    /// Display only clusters with at least this many instances
+    #[structopt(short = "c", long = "cluster-threshold", default_value = "1000")]
+    cluster_threshold: Count,
 
-    let matches = opts.parse(env::args().skip(1)).expect("Parsing args");
+    /// Only consider words with at least this many appearances for clustering
+    #[structopt(short = "w", long = "word-threshold", default_value = "1000")]
+    word_threshold: Count,
 
-    let cluster_threshold: Count = match matches.opt_str("c") {
-        Some(ct) => ct.parse().expect("Invalid cluster-threshold"),
-        None => 1000,
-    };
+    /// Discard lines longer than this many bytes
+    #[structopt(short = "l", long = "max-line-length", default_value = "1000")]
+    max_line_length: usize,
 
-    let word_threshold: Count = match matches.opt_str("w") {
-        Some(wt) => wt.parse().expect("Invalid word-threshold"),
-        None => 1000,
-    };
+    /// Display the clusters below the instance threshold rather than the common
+    /// ones above it
+    #[structopt(short = "r", long = "show-rare")]
+    show_rare: bool,
 
-    let max_line_length: usize = match matches.opt_str("max-line-length") {
-        Some(len) => len.parse().expect("Invalid max-line-length"),
-        None => 1000,
-    };
+    /// Consider lines with leading whitespace as continuation of the previous
+    /// line for clustering purposes
+    #[structopt(short = "m", long = "merge-lines")]
+    merge_lines: bool,
 
-    let print_help = matches.opt_present("h");
-    let merge_lines = matches.opt_present("m");
-    let show_rare = matches.opt_present("r");
+    #[structopt()]
+    input_files: Vec<PathBuf>,
+}
 
-    let inputs: Vec<&Path> = matches.free.iter().map(|p| Path::new(p)).collect();
+fn main() -> Result<(), Box<Error>> {
+    let opts = Opts::from_args();
 
-    if print_help || inputs.is_empty() {
-        println!("{}", opts.usage("Usage: slct-rs [options] [<files>...]"));
-        return;
-    }
-
-    let word_freq =
-        calc_word_freq(&inputs, max_line_length).expect("Failed to calculate word frequency");
-    println!("found {} unique words", word_freq.len());
+    let word_freq = calc_word_freq(&opts.input_files, opts.max_line_length)?;
+    println!("Found {} unique words", word_freq.len());
 
     let clusters = calc_clusters(
-        &inputs,
+        &opts.input_files,
         &word_freq,
-        word_threshold,
-        max_line_length,
-        merge_lines,
-    )
-    .expect("Failed to calculate clusters");
-    println!("found {} clusters", clusters.len());
+        opts.word_threshold,
+        opts.max_line_length,
+        opts.merge_lines,
+    )?;
+    println!("Found {} clusters", clusters.len());
 
     let sorted = {
         let mut v = clusters
             .into_iter()
-            .filter(|c| {
-                if show_rare {
-                    c.1 <= cluster_threshold
+            .filter(|&(_, count)| {
+                if opts.show_rare {
+                    count <= opts.cluster_threshold
                 } else {
-                    c.1 >= cluster_threshold
+                    count >= opts.cluster_threshold
                 }
             })
             .collect::<Vec<_>>();
@@ -103,15 +74,13 @@ fn main() {
     };
 
     for (cluster, count) in sorted {
-        println!(
-            "{}\t{}",
-            count,
-            String::from_utf8(cluster).expect("Invalid UTF-8")
-        );
+        println!("{}\t{}", count, String::from_utf8(cluster)?,);
     }
+
+    Ok(())
 }
 
-fn calc_word_freq(paths: &[&Path], max_line_length: usize) -> io::Result<WordCount> {
+fn calc_word_freq(paths: &[PathBuf], max_line_length: usize) -> io::Result<WordCount> {
     let mut word_freq: WordCount = HashMap::default();
 
     for path in paths {
@@ -131,11 +100,11 @@ fn calc_word_freq(paths: &[&Path], max_line_length: usize) -> io::Result<WordCou
         }
     }
 
-    Result::Ok(word_freq)
+    Ok(word_freq)
 }
 
 fn calc_clusters(
-    paths: &[&Path],
+    paths: &[PathBuf],
     word_freq: &WordCount,
     word_threshold: Count,
     max_line_length: usize,
@@ -180,7 +149,7 @@ fn calc_clusters(
         }
     }
 
-    Result::Ok(clusters)
+    Ok(clusters)
 }
 
 fn clusterify(chunk: &[u8], word_freq: &WordCount, word_threshold: Count) -> Vec<u8> {
