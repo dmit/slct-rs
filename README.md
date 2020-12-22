@@ -1,7 +1,3 @@
-The code in this repository was written by Dmitri Melnikov
-and released to the public domain, as explained at
-http://creativecommons.org/publicdomain/zero/1.0/
-
 slct-rs
 =======
 
@@ -25,3 +21,6 @@ Options:
         --max-line-length MAX_LINE_LENGTH
                         discard lines longer than this many characters (1000)
 ```
+
+## License
+The [Unlicense](LICENSE).

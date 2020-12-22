@@ -15,7 +15,6 @@ type WordCount = HashMap<Hash, Count, Fnv>;
 type Clusters = HashMap<Vec<u8>, Count, Fnv>;
 
 #[derive(StructOpt)]
-#[structopt(author = "")]
 struct Opts {
     /// Display only clusters with at least this many instances
     #[structopt(short = "c", long = "cluster-threshold", default_value = "1000")]
@@ -43,7 +42,7 @@ struct Opts {
     input_files: Vec<PathBuf>,
 }
 
-fn main() -> Result<(), Box<Error>> {
+fn main() -> Result<(), Box<dyn Error>> {
     let opts = Opts::from_args();
 
     let word_freq = calc_word_freq(&opts.input_files, opts.max_line_length)?;

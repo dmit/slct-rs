@@ -1,11 +1,11 @@
 [package]
 name = "slct-rs"
 version = "0.0.1"
-license = "CC0-1.0"
+license = "Unlicense"
 authors = ["Dmitri Melnikov <github@dmit.me>"]
 edition = "2018"
 publish = false
 
 [dependencies]
-fnv = "1"
-structopt = "0.2"
+fnv = "1.0.7"
+structopt = "0.3.21"
