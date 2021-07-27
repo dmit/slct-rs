@@ -1,49 +1,48 @@
-use std::collections::HashMap;
 use std::error::Error;
 use std::fs::File;
-use std::hash::{BuildHasherDefault, Hasher};
+use std::hash::Hasher;
 use std::io::{self, BufRead, BufReader};
 use std::path::PathBuf;
 
-use fnv::FnvHasher;
-use structopt::StructOpt;
+use ahash::{AHashMap, AHasher};
+use argh::FromArgs;
 
 type Hash = u64;
 type Count = u64;
-type Fnv = BuildHasherDefault<FnvHasher>;
-type WordCount = HashMap<Hash, Count, Fnv>;
-type Clusters = HashMap<Vec<u8>, Count, Fnv>;
+type WordCount = AHashMap<Hash, Count>;
+type Clusters = AHashMap<Vec<u8>, Count>;
 
-#[derive(StructOpt)]
+#[derive(FromArgs)]
+#[argh(description = "Simple Log Clustering Tool")]
 struct Opts {
-    /// Display only clusters with at least this many instances
-    #[structopt(short = "c", long = "cluster-threshold", default_value = "1000")]
+    /// display only clusters with at least this many instances
+    #[argh(option, short = 'c', long = "cluster-threshold", default = "1000")]
     cluster_threshold: Count,
 
-    /// Only consider words with at least this many appearances for clustering
-    #[structopt(short = "w", long = "word-threshold", default_value = "1000")]
+    /// only consider words with at least this many appearances for clustering
+    #[argh(option, short = 'w', long = "word-threshold", default = "1000")]
     word_threshold: Count,
 
-    /// Discard lines longer than this many bytes
-    #[structopt(short = "l", long = "max-line-length", default_value = "1000")]
+    /// discard lines longer than this many bytes
+    #[argh(option, short = 'l', long = "max-line-length", default = "1000")]
     max_line_length: usize,
 
-    /// Display the clusters below the instance threshold rather than the common
+    /// display the clusters below the instance threshold rather than the common
     /// ones above it
-    #[structopt(short = "r", long = "show-rare")]
+    #[argh(switch, short = 'r', long = "show-rare")]
     show_rare: bool,
 
-    /// Consider lines with leading whitespace as continuation of the previous
+    /// consider lines with leading whitespace as continuation of the previous
     /// line for clustering purposes
-    #[structopt(short = "m", long = "merge-lines")]
+    #[argh(switch, short = 'm', long = "merge-lines")]
     merge_lines: bool,
 
-    #[structopt()]
+    #[argh(positional)]
     input_files: Vec<PathBuf>,
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let opts = Opts::from_args();
+    let opts: Opts = argh::from_env();
 
     let word_freq = calc_word_freq(&opts.input_files, opts.max_line_length)?;
     println!("Found {} unique words", word_freq.len());
@@ -80,7 +79,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 }
 
 fn calc_word_freq(paths: &[PathBuf], max_line_length: usize) -> io::Result<WordCount> {
-    let mut word_freq: WordCount = HashMap::default();
+    let mut word_freq: WordCount = Default::default();
 
     for path in paths {
         let file = File::open(path)?;
@@ -93,7 +92,7 @@ fn calc_word_freq(paths: &[PathBuf], max_line_length: usize) -> io::Result<WordC
             }
 
             for w in line.split(char::is_whitespace).filter(|s| !s.is_empty()) {
-                let hash = fnv1a(w.as_bytes());
+                let hash = hash(w.as_bytes());
                 *word_freq.entry(hash).or_insert(0) += 1;
             }
         }
@@ -109,7 +108,7 @@ fn calc_clusters(
     max_line_length: usize,
     merge_lines: bool,
 ) -> io::Result<Clusters> {
-    let mut clusters: Clusters = HashMap::default();
+    let mut clusters: Clusters = Default::default();
 
     for path in paths {
         let file = File::open(path)?;
@@ -161,7 +160,7 @@ fn clusterify(chunk: &[u8], word_freq: &WordCount, word_threshold: Count) -> Vec
         }
         marker += word.len();
 
-        if word_freq[&fnv1a(word)] < word_threshold {
+        if word_freq[&hash(word)] < word_threshold {
             result.push(b'*');
         } else {
             result.extend_from_slice(word);
@@ -196,8 +195,8 @@ fn get_whitespace(bytes: &[u8]) -> &[u8] {
 }
 
 #[inline]
-fn fnv1a(bytes: &[u8]) -> Hash {
-    let mut hasher = FnvHasher::default();
+fn hash(bytes: &[u8]) -> Hash {
+    let mut hasher = AHasher::default();
     hasher.write(bytes);
     hasher.finish()
 }
