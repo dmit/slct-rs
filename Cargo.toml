@@ -3,10 +3,9 @@ name = "slct"
 version = "0.2.0"
 license = "Unlicense"
 authors = ["Dmitri Melnikov <github@dmit.me>"]
-edition = "2018"
-resolver = "2"
+edition = "2021"
 publish = false
 
 [dependencies]
-ahash = "0.7.4"
-argh = "0.1.5"
+ahash = { version = "0.8.6", default-features = false, features = ["runtime-rng", "std"] }
+argh = { version = "0.1.12", default-features = false }
