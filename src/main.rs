@@ -43,6 +43,10 @@ struct Opts {
 
 fn main() -> Result<(), Box<dyn Error>> {
     let opts: Opts = argh::from_env();
+    if opts.input_files.is_empty() {
+        eprintln!("No input files specified");
+        std::process::exit(1);
+    }
 
     let word_freq = calc_word_freq(&opts.input_files, opts.max_line_length)?;
     println!("Found {} unique words", word_freq.len());
