@@ -36,4 +36,4 @@ cargo install --path .
 to automatically place the binary in `$PATH`.
 
 ## License
-The [Unlicense](LICENSE).
+[0BSD](LICENSE.txt).
