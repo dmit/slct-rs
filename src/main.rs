@@ -1,16 +1,17 @@
-use std::error::Error;
-use std::fs::File;
-use std::hash::Hasher;
-use std::io::{self, BufRead, BufReader};
-use std::path::PathBuf;
+use std::{
+    error::Error,
+    fs::File,
+    io::{self, BufRead, BufReader},
+    path::PathBuf,
+};
 
-use ahash::{AHashMap, AHasher};
 use argh::FromArgs;
+use rapidhash::{RapidHashMap, rapidhash};
 
 type Hash = u64;
 type Count = u64;
-type WordCount = AHashMap<Hash, Count>;
-type Clusters = AHashMap<Vec<u8>, Count>;
+type WordCount = RapidHashMap<Hash, Count>;
+type Clusters = RapidHashMap<Vec<u8>, Count>;
 
 #[derive(FromArgs)]
 #[argh(description = "Simple Log Clustering Tool")]
@@ -164,10 +165,19 @@ fn clusterify(chunk: &[u8], word_freq: &WordCount, word_threshold: Count) -> Vec
         }
         marker += word.len();
 
-        if word_freq[&hash(word)] < word_threshold {
-            result.push(b'*');
-        } else {
-            result.extend_from_slice(word);
+        match word_freq.get(&hash(word)) {
+            Some(freq) if *freq < word_threshold => {
+                result.push(b'*');
+            }
+            Some(_) => {
+                result.extend_from_slice(word);
+            }
+            None => {
+                eprintln!(
+                    "Word not found in the frequency table: {}",
+                    String::from_utf8_lossy(word)
+                );
+            }
         }
 
         let whitespace = get_whitespace(&chunk[marker..]);
@@ -178,7 +188,6 @@ fn clusterify(chunk: &[u8], word_freq: &WordCount, word_threshold: Count) -> Vec
     result
 }
 
-#[inline]
 fn get_word(bytes: &[u8]) -> &[u8] {
     for (i, b) in bytes.iter().enumerate() {
         if b.is_ascii_whitespace() {
@@ -188,7 +197,6 @@ fn get_word(bytes: &[u8]) -> &[u8] {
     bytes
 }
 
-#[inline]
 fn get_whitespace(bytes: &[u8]) -> &[u8] {
     for (i, b) in bytes.iter().enumerate() {
         if !b.is_ascii_whitespace() {
@@ -198,9 +206,4 @@ fn get_whitespace(bytes: &[u8]) -> &[u8] {
     bytes
 }
 
-#[inline]
-fn hash(bytes: &[u8]) -> Hash {
-    let mut hasher = AHasher::default();
-    hasher.write(bytes);
-    hasher.finish()
-}
+fn hash(bytes: &[u8]) -> Hash { rapidhash(bytes) }

@@ -1,11 +1,11 @@
 [package]
 name = "slct"
-version = "0.2.0"
-license = "Unlicense"
+version = "0.3.0"
+license = "0BSD"
 authors = ["Dmitri Melnikov <github@dmit.me>"]
-edition = "2021"
+edition = "2024"
 publish = false
 
 [dependencies]
-ahash = { version = "0.8.6", default-features = false, features = ["runtime-rng", "std"] }
-argh = { version = "0.1.12", default-features = false }
+argh = { version = "0.1.13", default-features = false, features = ["help"] }
+rapidhash = { version = "1.4.0", default-features = false, features = ["std"] }
