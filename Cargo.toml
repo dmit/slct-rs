@@ -2,10 +2,9 @@
 name = "slct"
 version = "0.3.0"
 license = "0BSD"
-authors = ["Dmitri Melnikov <github@dmit.me>"]
 edition = "2024"
 publish = false
 
 [dependencies]
-argh = { version = "0.1.13", default-features = false, features = ["help"] }
-rapidhash = { version = "1.4.0", default-features = false, features = ["std"] }
+argh = { version = "0.1.14", default-features = false, features = ["help"] }
+rapidhash = { version = "4.4.1", default-features = false, features = ["std"] }

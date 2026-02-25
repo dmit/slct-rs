@@ -6,7 +6,7 @@ use std::{
 };
 
 use argh::FromArgs;
-use rapidhash::{RapidHashMap, rapidhash};
+use rapidhash::{RapidHashMap, v3::rapidhash_v3};
 
 type Hash = u64;
 type Count = u64;
@@ -206,4 +206,6 @@ fn get_whitespace(bytes: &[u8]) -> &[u8] {
     bytes
 }
 
-fn hash(bytes: &[u8]) -> Hash { rapidhash(bytes) }
+fn hash(bytes: &[u8]) -> Hash {
+    rapidhash_v3(bytes)
+}

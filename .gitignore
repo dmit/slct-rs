@@ -1,3 +1,2 @@
-logs
-target
-*.rs.bk
+/logs/
+/target/
